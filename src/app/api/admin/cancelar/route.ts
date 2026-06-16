@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   }
 
   const [pedido] = await sql`
-    SELECT id, rifa_id FROM pedidos WHERE id = ${pedidoId} AND status = 'reservado'
+    SELECT id, rifa_id FROM pedidos WHERE id = ${pedidoId} AND status IN ('reservado', 'pago')
   `;
 
   if (!pedido) {
