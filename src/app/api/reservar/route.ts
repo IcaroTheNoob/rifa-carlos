@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const jaReservados = await sql`
     SELECT numero FROM numeros
     WHERE rifa_id = ${rifa.id}
-    AND numero = ANY(${numerosIds}::int[])
+    AND numero = ANY(${numerosIds})
     AND status != 'disponivel'
   `;
 
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   const pedidoId = crypto.randomUUID();
 
-  await sql`
+  const updatedRows = await sql`
     UPDATE numeros SET
       status = 'reservado',
       cliente_nome = ${nome},
@@ -41,21 +41,17 @@ export async function POST(request: Request) {
       pedido_id = ${pedidoId},
       reservado_em = NOW()
     WHERE rifa_id = ${rifa.id}
-    AND numero = ANY(${numerosIds}::int[])
+    AND numero = ANY(${numerosIds})
     AND status = 'disponivel'
+    RETURNING id
   `;
 
-  const updatedRows = await sql`
-    SELECT COUNT(*) as count FROM numeros
-    WHERE rifa_id = ${rifa.id}
-    AND numero = ANY(${numerosIds}::int[])
-    AND status = 'reservado'
-    AND pedido_id = ${pedidoId}
-  `;
-
-  const confirmed = (updatedRows[0] as any).count;
+  const confirmed = updatedRows.length;
 
   if (confirmed !== numerosIds.length) {
+    console.error('RESERVAR MISMATCH:', JSON.stringify({
+      numerosIds, confirmed, pedidoId, rifaId: rifa.id, nome, telefone
+    }));
     await sql`
       UPDATE numeros SET
         status = 'disponivel',
@@ -75,10 +71,10 @@ export async function POST(request: Request) {
 
   await sql`
     INSERT INTO pedidos (id, rifa_id, cliente_nome, cliente_telefone, numeros, quantidade, valor_total, status)
-    VALUES (${pedidoId}, ${rifa.id}, ${nome}, ${telefone}, ${numerosIds}::int[], ${numerosIds.length}, ${valorTotal}, 'reservado')
+    VALUES (${pedidoId}, ${rifa.id}, ${nome}, ${telefone}, ${numerosIds}, ${numerosIds.length}, ${valorTotal}, 'reservado')
   `;
 
-  const numerosStr = numerosIds.join(', ');
+  const numerosStr = numerosIds.map((n: number) => String(n).padStart(3, "0")).join(', ');
   const mensagem = encodeURIComponent(
     `Olá, sou ${nome} e escolhi os números: ${numerosStr}.\n` +
     `Poderia me passar a chave PIX para que eu faça o pagamento e garanta minha reserva?`

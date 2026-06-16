@@ -44,6 +44,7 @@ export default function PainelAdmin() {
   const [expandPercent, setExpandPercent] = useState(20);
   const [expandQtd, setExpandQtd] = useState(50);
   const [whatsapp, setWhatsapp] = useState("");
+  const [modal, setModal] = useState<{ numero: Numero; pedido?: Pedido } | null>(null);
 
   function showMsg(text: string, type: "success" | "error" = "success") {
     setMsg({ text, type });
@@ -85,6 +86,13 @@ export default function PainelAdmin() {
   async function liberarNumero(numeroId: number) {
     await fetch("/api/admin/liberar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numeroId }) });
     showMsg("Número liberado!");
+    carregarDados();
+  }
+
+  async function cancelarPedido(pedidoId: string) {
+    if (!confirm("Tem certeza? Isso irá cancelar a reserva e liberar todos os números.")) return;
+    await fetch("/api/admin/cancelar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pedidoId }) });
+    showMsg("Reserva cancelada!");
     carregarDados();
   }
 
@@ -158,7 +166,7 @@ export default function PainelAdmin() {
 
         <div className="glass rounded-3xl p-6 flex items-center justify-between">
           <h1 className="text-2xl font-extrabold text-gray-900">Painel Admin</h1>
-          <span className="text-xs text-gray-400 bg-white px-3 py-1.5 rounded-full shadow-sm">senha: R1f@C4rl0s#2026!Segur4</span>
+          <span className="text-xs text-gray-400 bg-white px-3 py-1.5 rounded-full shadow-sm">Admin</span>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -187,19 +195,20 @@ export default function PainelAdmin() {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 lg:grid-cols-16 gap-1.5">
+              <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 lg:grid-cols-16 gap-1.5">
             {numerosFiltrados.map(n => (
               <div key={n.id} className="relative group">
-                <div className={`rounded-lg p-2 text-center text-[11px] font-bold cursor-default transition-all ${n.status === "disponivel" ? "bg-green-50 text-green-700" : n.status === "reservado" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}
+                <button onClick={() => {
+                  if (n.status === "reservado" || n.status === "pago") {
+                    const p = pedidos.find(ped => ped.id === n.pedido_id);
+                    setModal({ numero: n, pedido: p });
+                  }
+                }}
+                  className={`w-full rounded-lg p-2 text-center text-[11px] font-bold transition-all cursor-pointer ${n.status === "disponivel" ? "bg-green-50 text-green-700" : n.status === "reservado" ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-red-50 text-red-700 hover:bg-red-100"}`}
                   title={n.cliente_nome ? `${n.cliente_nome} (${n.cliente_telefone})` : `Nº ${n.numero}`}>
                   <span className="block leading-none">{String(n.numero).padStart(3, "0")}</span>
                   <StatusDot status={n.status} />
-                </div>
-                {n.status === "reservado" && (
-                  <button onClick={() => liberarNumero(n.id)}
-                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600 flex items-center justify-center"
-                    title="Liberar número">&times;</button>
-                )}
+                </button>
               </div>
             ))}
           </div>
@@ -244,14 +253,25 @@ export default function PainelAdmin() {
                       <td className="py-3 px-3 text-right font-bold text-green-700">R$ {p.valor_total.toFixed(2)}</td>
                       <td className="py-3 px-3 text-center"><Badge status={p.status} /></td>
                       <td className="py-3 px-3 text-center">
-                        {p.status === "reservado" ? (
-                          <button onClick={() => confirmarPagamento(p.id)}
-                            className="bg-green-500 hover:bg-green-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all hover:shadow-md">
-                            Confirmar PIX
-                          </button>
-                        ) : (
-                          <span className="text-green-600 text-xs font-bold">✓ Pago</span>
-                        )}
+                        <div className="flex items-center justify-center gap-1.5">
+                          {p.status === "reservado" ? (
+                            <>
+                              <button onClick={() => confirmarPagamento(p.id)}
+                                className="bg-green-500 hover:bg-green-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all hover:shadow-md">
+                                Confirmar PIX
+                              </button>
+                              <button onClick={() => cancelarPedido(p.id)}
+                                className="bg-red-100 hover:bg-red-200 text-red-600 p-1.5 rounded-lg transition-all hover:shadow-md"
+                                title="Cancelar reserva">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                </svg>
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-green-600 text-xs font-bold">✓ Pago</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -259,6 +279,32 @@ export default function PainelAdmin() {
               </table>
             </div>
           )}
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+          <h2 className="font-extrabold text-gray-900 mb-5">Tabela de todos os números</h2>
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nº</th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nome</th>
+                  <th className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Telefone</th>
+                  <th className="text-center py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {numeros.map(n => (
+                  <tr key={n.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                    <td className="py-2 px-3 font-bold text-gray-800">{String(n.numero).padStart(3, "0")}</td>
+                    <td className="py-2 px-3 text-gray-600">{n.cliente_nome || "—"}</td>
+                    <td className="py-2 px-3 text-gray-600">{n.cliente_telefone || "—"}</td>
+                    <td className="py-2 px-3 text-center"><Badge status={n.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -284,6 +330,42 @@ export default function PainelAdmin() {
           </div>
         </div>
 
+        {modal && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setModal(null)}>
+            <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-scaleIn" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-extrabold text-lg text-gray-900">Nº {String(modal.numero.numero).padStart(3, "0")}</h3>
+                <button onClick={() => setModal(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+              </div>
+              {modal.numero.cliente_nome && (
+                <div className="bg-gray-50 rounded-2xl p-4 mb-4 space-y-2 text-sm">
+                  <p><span className="text-gray-500">Nome:</span> <strong>{modal.numero.cliente_nome}</strong></p>
+                  <p><span className="text-gray-500">Telefone:</span> <strong>{modal.numero.cliente_telefone}</strong></p>
+                  {modal.numero.reservado_em && <p><span className="text-gray-500">Reservado em:</span> <strong>{new Date(modal.numero.reservado_em).toLocaleString("pt-BR")}</strong></p>}
+                  {modal.pedido && <p><span className="text-gray-500">Valor:</span> <strong>R$ {modal.pedido.valor_total.toFixed(2)}</strong></p>}
+                </div>
+              )}
+              <Badge status={modal.numero.status} />
+              <div className="mt-5 flex gap-2">
+                {modal.numero.status === "reservado" && modal.numero.pedido_id && (
+                  <>
+                    <button onClick={() => { confirmarPagamento(modal.numero.pedido_id!); setModal(null); }}
+                      className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl text-sm transition-all">
+                      Confirmar PIX
+                    </button>
+                    <button onClick={() => { cancelarPedido(modal.numero.pedido_id!); setModal(null); }}
+                      className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl text-sm transition-all">
+                      Cancelar
+                    </button>
+                  </>
+                )}
+                {modal.numero.status === "pago" && (
+                  <div className="w-full text-center py-2 text-green-600 font-bold text-sm bg-green-50 rounded-xl">✓ Pagamento confirmado</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );

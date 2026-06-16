@@ -102,7 +102,7 @@ export default function RifaPage() {
 
             <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-5 my-6">
               <p className="text-sm text-gray-600 mb-1">Seus números</p>
-              <p className="text-3xl font-black text-green-700">{sucesso.numeros.join(" · ")}</p>
+              <p className="text-3xl font-black text-green-700">{sucesso.numeros.map(n => String(n).padStart(3, "0")).join(" · ")}</p>
               <div className="mt-3 pt-3 border-t border-green-200">
                 <p className="text-sm text-gray-600">Valor a pagar</p>
                 <p className="text-2xl font-black text-green-700">R$ {sucesso.valorTotal.toFixed(2)}</p>
@@ -190,7 +190,7 @@ export default function RifaPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-500 font-medium">Números selecionados</p>
-                  <p className="font-bold text-gray-800">{selecionados.join(", ")}</p>
+                  <p className="font-bold text-gray-800">{selecionados.map(n => String(n).padStart(3, "0")).join(", ")}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500 font-medium">Total</p>
