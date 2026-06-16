@@ -38,8 +38,8 @@ CREATE TABLE pedidos (
 );
 
 INSERT INTO rifas (titulo, descricao, valor_numero, total_numeros, numeros_restantes, whatsapp) VALUES
-('Rifa', '', 10, 100, 100, '');
+('Rifa', '', 10, 200, 200, '');
 
 INSERT INTO numeros (rifa_id, numero, status)
 SELECT 1, generate_series, 'disponivel'
-FROM generate_series(1, 100);
+FROM generate_series(1, 200);

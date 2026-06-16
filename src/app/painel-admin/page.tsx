@@ -2,36 +2,32 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-interface Rifa {
-  id: number;
-  titulo: string;
-  valor_numero: number;
-  total_numeros: number;
-  numeros_restantes: number;
-  auto_expand_percent: number;
-  auto_expand_qtd: number;
-  whatsapp: string;
+interface RifaData { id: number; titulo: string; valor_numero: number; total_numeros: number; numeros_restantes: number; auto_expand_percent: number; auto_expand_qtd: number; whatsapp: string }
+interface Numero { id: number; numero: number; status: string; cliente_nome: string | null; cliente_telefone: string | null; pedido_id: string | null; reservado_em: string | null }
+interface Pedido { id: string; cliente_nome: string; cliente_telefone: string; numeros: number[]; quantidade: number; valor_total: number; status: string; created_at: string }
+
+function Input({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">{label}</label>
+      <input {...props} className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all" />
+    </div>
+  );
 }
 
-interface Numero {
-  id: number;
-  numero: number;
-  status: string;
-  cliente_nome: string | null;
-  cliente_telefone: string | null;
-  pedido_id: string | null;
-  reservado_em: string | null;
+function Badge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    disponivel: "bg-green-100 text-green-700",
+    reservado: "bg-amber-100 text-amber-700",
+    pago: "bg-red-100 text-red-700",
+    cancelado: "bg-gray-100 text-gray-500",
+  };
+  return <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${colors[status] || "bg-gray-100 text-gray-600"}`}>{status}</span>;
 }
 
-interface Pedido {
-  id: string;
-  cliente_nome: string;
-  cliente_telefone: string;
-  numeros: number[];
-  quantidade: number;
-  valor_total: number;
-  status: string;
-  created_at: string;
+function StatusDot({ status }: { status: string }) {
+  const colors: Record<string, string> = { disponivel: "bg-green-400", reservado: "bg-amber-400", pago: "bg-red-400" };
+  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${colors[status] || "bg-gray-300"}`} />;
 }
 
 export default function PainelAdmin() {
@@ -39,15 +35,20 @@ export default function PainelAdmin() {
   const [senha, setSenha] = useState("");
   const [erroLogin, setErroLogin] = useState("");
 
-  const [rifa, setRifa] = useState<Rifa | null>(null);
+  const [rifa, setRifa] = useState<RifaData | null>(null);
   const [numeros, setNumeros] = useState<Numero[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [filtro, setFiltro] = useState<"todos" | "disponivel" | "reservado" | "pago">("todos");
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const [expandPercent, setExpandPercent] = useState(20);
   const [expandQtd, setExpandQtd] = useState(50);
   const [whatsapp, setWhatsapp] = useState("");
+
+  function showMsg(text: string, type: "success" | "error" = "success") {
+    setMsg({ text, type });
+    setTimeout(() => setMsg(null), 3000);
+  }
 
   const carregarDados = useCallback(async () => {
     try {
@@ -60,106 +61,72 @@ export default function PainelAdmin() {
       setExpandQtd(data.rifa.auto_expand_qtd);
       setWhatsapp(data.rifa.whatsapp);
     } catch {
-      setMsg("Erro ao carregar dados");
+      showMsg("Erro ao carregar dados", "error");
     }
   }, []);
 
   async function fazerLogin() {
     const res = await fetch("/api/admin/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ senha }),
     });
-    if (res.ok) {
-      setAutenticado(true);
-      setErroLogin("");
-    } else {
-      setErroLogin("Senha incorreta");
-    }
+    if (res.ok) { setAutenticado(true); setErroLogin(""); }
+    else setErroLogin("Senha incorreta");
   }
 
-  useEffect(() => {
-    if (autenticado) carregarDados();
-  }, [autenticado, carregarDados]);
+  useEffect(() => { if (autenticado) carregarDados(); }, [autenticado, carregarDados]);
 
   async function confirmarPagamento(pedidoId: string) {
-    await fetch("/api/admin/confirmar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pedidoId }),
-    });
-    setMsg("Pagamento confirmado!");
+    await fetch("/api/admin/confirmar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pedidoId }) });
+    showMsg("Pagamento confirmado!");
     carregarDados();
   }
 
   async function liberarNumero(numeroId: number) {
-    await fetch("/api/admin/liberar", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ numeroId }),
-    });
-    setMsg("Número liberado!");
+    await fetch("/api/admin/liberar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numeroId }) });
+    showMsg("Número liberado!");
     carregarDados();
   }
 
-  async function salvarConfig() {
-    const totalAtual = rifa?.total_numeros || 0;
-    const res = await fetch("/api/admin/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        whatsapp,
-        total_numeros: totalAtual,
-      }),
-    });
-    if (res.ok) setMsg("Configuração salva!");
-    carregarDados();
+  async function salvarWhatsapp() {
+    await fetch("/api/admin/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ whatsapp, total_numeros: rifa?.total_numeros }) });
+    showMsg("WhatsApp salvo!");
   }
 
   async function salvarAutoExpand() {
-    await fetch("/api/admin/expandir", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ percent: expandPercent, quantidade: expandQtd }),
-    });
-    setMsg("Auto-expand configurado!");
-    carregarDados();
+    await fetch("/api/admin/expandir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ percent: expandPercent, quantidade: expandQtd }) });
+    showMsg("Auto-expand configurado!");
   }
 
   async function adicionarNumeros() {
-    const novos = prompt("Quantos números deseja adicionar?", "50");
-    if (!novos) return;
-    const qtd = parseInt(novos);
+    const input = prompt("Quantos números deseja adicionar?", "50");
+    if (!input) return;
+    const qtd = parseInt(input);
     if (isNaN(qtd) || qtd < 1) return;
-
     const totalNovo = (rifa?.total_numeros || 0) + qtd;
-    const res = await fetch("/api/admin/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ total_numeros: totalNovo, whatsapp }),
-    });
-    if (res.ok) setMsg(`${qtd} números adicionados!`);
+    await fetch("/api/admin/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ total_numeros: totalNovo, whatsapp }) });
+    showMsg(`${qtd} números adicionados!`);
     carregarDados();
   }
 
   if (!autenticado) {
     return (
-      <main className="max-w-sm mx-auto p-4 pt-20">
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
-          <h1 className="text-xl font-bold text-center mb-6">Painel Admin</h1>
-          <input
-            type="password"
-            value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && fazerLogin()}
-            className="w-full border border-gray-300 rounded-xl px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
-            placeholder="Senha"
-          />
-          {erroLogin && <p className="text-red-600 text-sm mb-4">{erroLogin}</p>}
-          <button
-            onClick={fazerLogin}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl transition-colors"
-          >
+      <main className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-gray-50 to-green-50">
+        <div className="bg-white rounded-3xl p-8 shadow-xl max-w-sm w-full animate-scaleIn">
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 gradient-green rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-extrabold text-gray-900">Painel Admin</h1>
+            <p className="text-sm text-gray-500 mt-1">Acesso restrito</p>
+          </div>
+          <input type="password" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === "Enter" && fazerLogin()}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-400 transition-all mb-4"
+            placeholder="Digite a senha" />
+          {erroLogin && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm mb-4">{erroLogin}</div>}
+          <button onClick={fazerLogin} className="gradient-green text-white font-bold py-3.5 px-6 rounded-xl w-full shadow-lg hover:shadow-xl transition-all hover:scale-[1.01] active:scale-[0.99]">
             Entrar
           </button>
         </div>
@@ -167,196 +134,156 @@ export default function PainelAdmin() {
     );
   }
 
-  const disponiveis = numeros.filter((n) => n.status === "disponivel").length;
-  const reservados = numeros.filter((n) => n.status === "reservado").length;
-  const pagos = numeros.filter((n) => n.status === "pago").length;
+  const disponiveis = numeros.filter(n => n.status === "disponivel").length;
+  const reservados = numeros.filter(n => n.status === "reservado").length;
+  const pagos = numeros.filter(n => n.status === "pago").length;
   const totalArrecadado = pagos * (rifa?.valor_numero || 0);
+  const numerosFiltrados = filtro === "todos" ? numeros : numeros.filter(n => n.status === filtro);
 
-  const numerosFiltrados = filtro === "todos" ? numeros : numeros.filter((n) => n.status === filtro);
+  const pedidosAgrupados = pedidos.filter(p => p.status !== "cancelado").map(p => ({
+    ...p,
+    numerosList: p.numeros,
+  }));
 
   return (
-    <main className="max-w-4xl mx-auto p-4 pt-8">
-      <h1 className="text-2xl font-bold mb-6">Painel Admin</h1>
+    <main className="min-h-screen p-4 pb-16">
+      <div className="max-w-5xl mx-auto space-y-5 animate-fadeIn">
 
-      {msg && (
-        <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl p-4 mb-4 text-sm">
-          {msg}
-          <button onClick={() => setMsg("")} className="float-right font-bold">X</button>
-        </div>
-      )}
+        {msg && (
+          <div className={`rounded-2xl p-4 text-sm font-medium flex items-center gap-3 animate-fadeIn ${msg.type === "success" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+            <span>{msg.text}</span>
+            <button onClick={() => setMsg(null)} className="ml-auto font-bold opacity-60 hover:opacity-100">&times;</button>
+          </div>
+        )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-          <div className="text-2xl font-bold text-green-600">{disponiveis}</div>
-          <div className="text-sm text-gray-500">Disponíveis</div>
+        <div className="glass rounded-3xl p-6 flex items-center justify-between">
+          <h1 className="text-2xl font-extrabold text-gray-900">Painel Admin</h1>
+          <span className="text-xs text-gray-400 bg-white px-3 py-1.5 rounded-full shadow-sm">senha: R1f@C4rl0s#2026!Segur4</span>
         </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-          <div className="text-2xl font-bold text-yellow-500">{reservados}</div>
-          <div className="text-sm text-gray-500">Reservados</div>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-          <div className="text-2xl font-bold text-red-500">{pagos}</div>
-          <div className="text-sm text-gray-500">Pagos</div>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-          <div className="text-2xl font-bold text-green-700">R$ {totalArrecadado.toFixed(2)}</div>
-          <div className="text-sm text-gray-500">Arrecadado</div>
-        </div>
-      </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="font-semibold text-lg">Números</h2>
-          <div className="flex gap-2">
-            {["todos", "disponivel", "reservado", "pago"].map((f) => (
-              <button
-                key={f}
-                onClick={() => setFiltro(f as any)}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  filtro === f
-                    ? "bg-green-500 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {f === "todos" ? "Todos" : f === "disponivel" ? "Disponível" : f === "reservado" ? "Reservado" : "Pago"}
-              </button>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Disponíveis", value: disponiveis, color: "text-green-600", bg: "bg-green-50" },
+            { label: "Reservados", value: reservados, color: "text-amber-600", bg: "bg-amber-50" },
+            { label: "Pagos", value: pagos, color: "text-red-600", bg: "bg-red-50" },
+            { label: "Arrecadado", value: `R$ ${totalArrecadado.toFixed(2)}`, color: "text-green-800", bg: "bg-emerald-50" },
+          ].map(stat => (
+            <div key={stat.label} className={`${stat.bg} rounded-2xl p-4 shadow-sm border border-transparent`}>
+              <p className="text-2xl font-black ${stat.color}">{stat.value}</p>
+              <p className="text-xs text-gray-500 font-medium mt-1">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <h2 className="font-extrabold text-gray-900">Números</h2>
+            <div className="flex gap-1.5">
+              {(["todos", "disponivel", "reservado", "pago"] as const).map(f => (
+                <button key={f} onClick={() => setFiltro(f)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${filtro === f ? "gradient-green text-white shadow-md" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  {f === "todos" ? "Todos" : f === "disponivel" ? "Disponível" : f === "reservado" ? "Reservado" : "Pago"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 lg:grid-cols-16 gap-1.5">
+            {numerosFiltrados.map(n => (
+              <div key={n.id} className="relative group">
+                <div className={`rounded-lg p-2 text-center text-[11px] font-bold cursor-default transition-all ${n.status === "disponivel" ? "bg-green-50 text-green-700" : n.status === "reservado" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}
+                  title={n.cliente_nome ? `${n.cliente_nome} (${n.cliente_telefone})` : `Nº ${n.numero}`}>
+                  <span className="block leading-none">{String(n.numero).padStart(3, "0")}</span>
+                  <StatusDot status={n.status} />
+                </div>
+                {n.status === "reservado" && (
+                  <button onClick={() => liberarNumero(n.id)}
+                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600 flex items-center justify-center"
+                    title="Liberar número">&times;</button>
+                )}
+              </div>
             ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-1.5">
-          {numerosFiltrados.map((n) => {
-            const cor =
-              n.status === "disponivel"
-                ? "bg-green-100 text-green-800"
-                : n.status === "reservado"
-                  ? "bg-yellow-100 text-yellow-800"
-                  : "bg-red-100 text-red-800";
-
-            return (
-              <div
-                key={n.id}
-                className={`${cor} rounded-lg p-2 text-center text-xs font-bold cursor-default relative group`}
-                title={
-                  n.cliente_nome
-                    ? `${n.cliente_nome} (${n.cliente_telefone})`
-                    : `Nº ${n.numero}`
-                }
-              >
-                {String(n.numero).padStart(3, "0")}
-                {n.status === "reservado" && (
-                  <button
-                    onClick={() => liberarNumero(n.id)}
-                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Liberar número"
-                  >
-                    X
-                  </button>
-                )}
-              </div>
-            );
-          })}
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+          <h2 className="font-extrabold text-gray-900 mb-5">Pessoas e seus números</h2>
+          {pedidosAgrupados.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+              </svg>
+              <p className="font-medium">Nenhuma reserva ainda</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nome</th>
+                    <th className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">WhatsApp</th>
+                    <th className="text-left py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Números</th>
+                    <th className="text-center py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Qtd</th>
+                    <th className="text-right py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</th>
+                    <th className="text-center py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="text-center py-3 px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pedidosAgrupados.map(p => (
+                    <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="py-3 px-3 font-medium text-gray-800">{p.cliente_nome}</td>
+                      <td className="py-3 px-3 text-gray-500">{p.cliente_telefone}</td>
+                      <td className="py-3 px-3">
+                        <div className="flex flex-wrap gap-1">
+                          {p.numerosList.map(num => (
+                            <span key={num} className="inline-block bg-gray-100 text-gray-700 text-[11px] font-bold px-2 py-0.5 rounded-md">{String(num).padStart(3, "0")}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-center font-bold">{p.quantidade}</td>
+                      <td className="py-3 px-3 text-right font-bold text-green-700">R$ {p.valor_total.toFixed(2)}</td>
+                      <td className="py-3 px-3 text-center"><Badge status={p.status} /></td>
+                      <td className="py-3 px-3 text-center">
+                        {p.status === "reservado" ? (
+                          <button onClick={() => confirmarPagamento(p.id)}
+                            className="bg-green-500 hover:bg-green-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all hover:shadow-md">
+                            Confirmar PIX
+                          </button>
+                        ) : (
+                          <span className="text-green-600 text-xs font-bold">✓ Pago</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
-        <h2 className="font-semibold text-lg mb-4">Pedidos Pendentes</h2>
-        {pedidos.filter((p) => p.status === "reservado").length === 0 ? (
-          <p className="text-gray-500 text-sm">Nenhum pedido pendente</p>
-        ) : (
-          <div className="space-y-3">
-            {pedidos
-              .filter((p) => p.status === "reservado")
-              .map((p) => (
-                <div key={p.id} className="border border-gray-200 rounded-xl p-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-semibold">{p.cliente_nome}</p>
-                      <p className="text-sm text-gray-500">{p.cliente_telefone}</p>
-                      <p className="text-sm mt-1">
-                        Números: <strong>{p.numeros.join(", ")}</strong>
-                      </p>
-                      <p className="text-sm">
-                        Total: <strong>R$ {p.valor_total.toFixed(2)}</strong>
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => confirmarPagamento(p.id)}
-                      className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                    >
-                      Confirmar pagamento
-                    </button>
-                  </div>
-                </div>
-              ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+            <h2 className="font-extrabold text-gray-900 mb-4">Configurações</h2>
+            <div className="space-y-4">
+              <Input label="WhatsApp (receber mensagens)" type="text" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="5511999999999" />
+              <button onClick={salvarWhatsapp} className="gradient-green text-white font-bold py-3 px-5 rounded-xl text-sm w-full shadow-md hover:shadow-lg transition-all">Salvar WhatsApp</button>
+            </div>
           </div>
-        )}
-      </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
-        <h2 className="font-semibold text-lg mb-4">Configurações</h2>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp (receber mensagens)</label>
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+            <h2 className="font-extrabold text-gray-900 mb-4">Expansão automática</h2>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <Input label="Quando faltar X%" type="number" value={expandPercent} onChange={e => setExpandPercent(parseInt(e.target.value) || 0)} />
+              <Input label="Adicionar Y números" type="number" value={expandQtd} onChange={e => setExpandQtd(parseInt(e.target.value) || 0)} />
+            </div>
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                className="flex-1 border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="5511999999999"
-              />
-              <button
-                onClick={salvarConfig}
-                className="bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-xl font-medium transition-colors"
-              >
-                Salvar
-              </button>
+              <button onClick={salvarAutoExpand} className="flex-1 bg-gray-800 hover:bg-gray-900 text-white font-bold py-3 rounded-xl text-sm transition-all shadow-md hover:shadow-lg">Salvar auto-expand</button>
+              <button onClick={adicionarNumeros} className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl text-sm transition-all shadow-md hover:shadow-lg">+ Adicionar</button>
             </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <h3 className="font-medium mb-3">Expansão automática de números</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Quando faltar X%</label>
-                <input
-                  type="number"
-                  value={expandPercent}
-                  onChange={(e) => setExpandPercent(parseInt(e.target.value) || 0)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Adicionar Y números</label>
-                <input
-                  type="number"
-                  value={expandQtd}
-                  onChange={(e) => setExpandQtd(parseInt(e.target.value) || 0)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-            </div>
-            <button
-              onClick={salvarAutoExpand}
-              className="mt-3 bg-gray-800 hover:bg-gray-900 text-white px-4 py-3 rounded-xl font-medium transition-colors"
-            >
-              Salvar auto-expand
-            </button>
-          </div>
-
-          <div className="border-t pt-4">
-            <h3 className="font-medium mb-3">Adicionar números manualmente</h3>
-            <button
-              onClick={adicionarNumeros}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-xl font-medium transition-colors"
-            >
-              + Adicionar números
-            </button>
-            <p className="text-xs text-gray-400 mt-2">Total atual: {rifa?.total_numeros || 0} números</p>
+            <p className="text-xs text-gray-400 mt-3">Total: <strong>{rifa?.total_numeros || 0}</strong> números</p>
           </div>
         </div>
+
       </div>
     </main>
   );
