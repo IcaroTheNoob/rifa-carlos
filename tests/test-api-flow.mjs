@@ -1,7 +1,12 @@
 import { chromium } from "playwright";
 
 const BASE = "https://rifa-carlos.vercel.app";
-const SENHA = "Br@cinho2026";
+const SENHA = process.env.ADMIN_PASSWORD;
+
+if (!SENHA) {
+  console.error("❌ ERRO: Defina ADMIN_PASSWORD no .env.local");
+  process.exit(1);
+}
 
 let ok = 0, fail = 0;
 

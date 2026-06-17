@@ -1,0 +1,86 @@
+#!/bin/sh
+# Pre-commit hook — Security scanner for hardcoded credentials
+# Scans staged files for password/secrets patterns (works on Git Bash / Git for Windows)
+# Avoids subshell pitfalls by using temp file for state
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$FILES" ]; then
+    echo "[pre-commit] No staged files to scan."
+    exit 0
+fi
+
+echo ""
+echo -e "${CYAN}[SECURITY] $(echo "$FILES" | wc -l) staged file(s) scanning...${NC}"
+
+# Temp file to track blocked state across subshells
+BLOCKED_FILE=$(mktemp)
+echo "0" > "$BLOCKED_FILE"
+
+echo "$FILES" | while IFS= read -r file; do
+    case "$file" in
+        *.env*) continue ;;
+        .githooks/*) continue ;;
+        .gitignore) continue ;;
+    esac
+
+    content=$(git show ":0:$file" 2>/dev/null)
+    if [ -z "$content" ]; then
+        continue
+    fi
+
+    LINE_NUM=0
+    HAS_ISSUE=0
+
+    echo "$content" | while IFS= read -r line; do
+        LINE_NUM=$((LINE_NUM + 1))
+
+        MATCH=""
+        if echo "$line" | grep -Eq 'postgresql://'; then
+            MATCH="PostgreSQL connection string"
+        elif echo "$line" | grep -Eq 'npg_[A-Za-z0-9_-]+'; then
+            MATCH="Neon password (npg_)"
+        elif echo "$line" | grep -Eq '(password|PASSWORD|senha)\s*=\s*\S{4,}'; then
+            MATCH="Hardcoded credential (password/senha)"
+        elif echo "$line" | grep -Eq '(api[_-]?key|apikey)\s*[:=]\s*\S{16,}'; then
+            MATCH="Hardcoded API key"
+        elif echo "$line" | grep -Eq '(secret|SECRET)\s*[:=]\s*\S{16,}'; then
+            MATCH="Hardcoded secret"
+        elif echo "$line" | grep -Eq 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'; then
+            MATCH="JWT token"
+        fi
+
+        if [ -n "$MATCH" ]; then
+            if [ "$HAS_ISSUE" -eq 0 ]; then
+                echo -e "  ${RED}[FAIL]${NC} $file" >&2
+                HAS_ISSUE=1
+                echo "1" > "$BLOCKED_FILE"
+            fi
+            echo -e "     ${YELLOW}L$LINE_NUM : $MATCH${NC}" >&2
+            SHORT=$(echo "$line" | sed 's/^[[:space:]]*//' | head -c 80)
+            echo -e "       --> $SHORT" >&2
+        fi
+    done
+done
+
+BLOCKED=$(cat "$BLOCKED_FILE")
+rm -f "$BLOCKED_FILE"
+
+if [ "$BLOCKED" = "1" ]; then
+    echo ""
+    echo -e "${RED}[BLOCKED] Commit rejeitado! Credenciais hardcoded detectadas.${NC}"
+    echo -e "  Use variaveis de ambiente (process.env) ou .env.local em vez de valores literais."
+    echo -e "  Se for falso positivo, use: git commit --no-verify"
+    echo ""
+    exit 1
+else
+    echo -e "${GREEN}[PASS] Nenhuma credencial hardcoded detectada.${NC}"
+    echo ""
+    exit 0
+fi
